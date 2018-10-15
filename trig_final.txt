@@ -1,0 +1,58 @@
+CREATE OR REPLACE TRIGGER ttl_upd_bill_inv_reco_xml
+   AFTER INSERT
+   ON ttl_xml_csv_log
+   FOR EACH ROW
+DECLARE
+   v_fmt_date     DATE;
+   v_fmt_status   NUMBER (30);
+   count_check    NUMBER (30);
+   v_errorcode    VARCHAR2 (300);
+   v_errortext    VARCHAR2 (300);
+   v_account_no   NUMBER;
+   v_invoice_no   NUMBER;
+BEGIN
+   v_account_no := :NEW.account_no;
+   v_invoice_no := :NEW.invoice_no;
+
+   SELECT COUNT (*)
+     INTO count_check
+     FROM ttl_bill_invoice_reco
+    WHERE account_no = :NEW.account_no AND invoice_no = :NEW.invoice_no;
+
+   IF count_check != 0
+   THEN
+      BEGIN
+         SELECT status, xml_end_time
+           INTO v_fmt_status, v_fmt_date
+           FROM ttl_feed_track_dtls
+          WHERE tracking_id = TO_NUMBER (:NEW.lotnumber)
+            AND account_no = :NEW.account_no
+            AND invoice_no = :NEW.invoice_no;
+
+         UPDATE arbor.ttl_bill_invoice_reco
+            SET fmt_status = v_fmt_status,
+                bill_amount = :NEW.bill_amount,
+                fmt_date = v_fmt_date,
+                first_bill = :NEW.first_bill
+          WHERE account_no = :NEW.account_no AND invoice_no = :NEW.invoice_no;
+      EXCEPTION
+         WHEN OTHERS
+         THEN
+            v_errorcode := SQLCODE;
+            v_errortext := SUBSTR (SQLERRM, 1, 100);
+            raise_application_error
+                 (-20001,
+                     '173215, TRIG: update Failed in ttl_bill_invoice_reco ('
+                  || v_errorcode
+                  || ': '
+                  || v_errortext
+                  || ':'
+                  || v_account_no
+                  || ':'
+                  || v_invoice_no
+                  || '...).'
+                 );
+      END;
+   END IF;
+END;
+/
